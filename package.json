@@ -1,0 +1,32 @@
+{
+  "name": "heidikiller",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Heidikiller — an AI medical scribe: listens to a consultation, drafts the patient note and referrals in your format, and answers clinical questions live during the consult.",
+  "scripts": {
+    "dev": "netlify dev",
+    "dev:vite": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0",
+    "@deepgram/sdk": "^4.11.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^4.2.10",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
+  }
+}
