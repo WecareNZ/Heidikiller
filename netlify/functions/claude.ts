@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { fetchMatchingProtocols, type Protocol } from "../lib/protocols";
 
 /**
  * Server-side proxy for Anthropic. Keeps ANTHROPIC_API_KEY off the client.
@@ -28,16 +29,6 @@ interface ReferralFormat {
 interface Exemplar {
   context?: string;
   note: string;
-}
-interface Protocol {
-  title: string;
-  source: string;
-  region?: string;
-  whenToRefer: string;
-  requiredWorkup: string;
-  redFlags?: string;
-  referralMustInclude: string;
-  destination: string;
 }
 
 function renderProtocols(protocols: Protocol[]): string {
@@ -235,7 +226,13 @@ density, structure, selectivity, and tone — not their specific content:\n\n` +
     )
     .join("\n\n");
 
-  const protocolBlock = renderProtocols(p.protocols ?? []);
+  // Prefer protocols from Supabase (real, server-only); fall back to whatever
+  // the client passed (the public synthetic set).
+  const protocols =
+    (await fetchMatchingProtocols(JSON.stringify(p.facts ?? ""))) ??
+    p.protocols ??
+    [];
+  const protocolBlock = renderProtocols(protocols);
 
   const system = `${p.clinicalInstructions}
 
@@ -313,7 +310,11 @@ CORRECTED final version. Check, and fix where wrong:
 Keep the existing structure and the clinician's style. Make the minimum changes
 needed — do not rewrite good content.
 
-${renderProtocols(p.protocols ?? [])}
+${renderProtocols(
+  (await fetchMatchingProtocols(JSON.stringify(p.facts ?? ""))) ??
+    p.protocols ??
+    [],
+)}
 
 Return ONLY JSON (no prose, no fences):
 {"note": "<corrected note>", "referrals": [{"title": "...", "body": "..."}]}`;
