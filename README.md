@@ -75,6 +75,34 @@ Open `src/config/templates.ts`:
   its letter `format`.
 - `CLINICAL_INSTRUCTIONS` — global rules (no invented findings, NZ spelling…).
 
+## Referral protocols (HealthPathways / WeCare)
+
+Referrals are grounded in your protocol criteria, not the model's memory. Source
+text lives in **Supabase** (server-side only — licensed content never reaches the
+browser). Until Supabase is configured, the app falls back to the synthetic
+placeholders in `src/config/protocols.ts`.
+
+To enable the real store:
+
+1. Apply the migration to your Supabase project (creates `referral_protocols`,
+   RLS locked to server-only reads):
+
+   ```bash
+   # via the Supabase SQL editor, paste supabase/migrations/0001_referral_protocols.sql
+   # or with the Supabase CLI:
+   supabase db push
+   ```
+
+2. Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ADMIN_TOKEN` in `.env`
+   (local) and in the Netlify site's environment variables (deploy).
+
+3. Open the app → **Protocols** tab → enter your `ADMIN_TOKEN` → add/edit
+   protocols (when-to-refer, required workup, red flags, must-include,
+   destination, and trigger keywords for matching).
+
+> The admin token is lightweight gating for an internal tool. Replace with real
+> auth (Supabase Auth / SSO) before production use.
+
 ## Deploying
 
 ```bash

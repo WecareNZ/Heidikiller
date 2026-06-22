@@ -6,7 +6,12 @@ import type {
 } from "../lib/types";
 import type { GenStage } from "../lib/api";
 
+export type View = "consult" | "protocols";
+
 interface AppState {
+  view: View;
+  setView: (v: View) => void;
+
   status: ConsultStatus;
   /** Stabilised transcript lines, in order. */
   finalLines: string[];
@@ -42,6 +47,9 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set, get) => ({
+  view: "consult",
+  setView: (view) => set({ view }),
+
   status: "idle",
   finalLines: [],
   interim: "",
