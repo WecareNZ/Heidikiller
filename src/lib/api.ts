@@ -6,8 +6,18 @@ import {
   NOTE_TEMPLATES,
   REFERRAL_TEMPLATES,
 } from "../config/templates";
+import { REFERRAL_PROTOCOLS, type ReferralProtocol } from "../config/protocols";
 
 export type GenStage = "extracting" | "composing" | "checking";
+
+/** Keyword-match the consultation facts to relevant referral protocols. */
+function matchProtocols(facts: unknown): ReferralProtocol[] {
+  const haystack = JSON.stringify(facts ?? "").toLowerCase();
+  const matched = REFERRAL_PROTOCOLS.filter((p) =>
+    p.triggers.some((t) => haystack.includes(t.toLowerCase())),
+  );
+  return matched.slice(0, 6); // cap to keep the compose prompt lean
+}
 
 async function callClaude<T>(body: Record<string, unknown>): Promise<T> {
   const res = await fetch("/.netlify/functions/claude", {
@@ -53,7 +63,10 @@ export async function generateDocuments(
     clinicalInstructions: CLINICAL_INSTRUCTIONS,
   });
 
-  // Pass 2 — compose the note + referrals from the facts.
+  // Match relevant referral protocols (HealthPathways / WeCare) for grounding.
+  const protocols = matchProtocols(facts);
+
+  // Pass 2 — compose the note + referrals from the facts, grounded in protocols.
   onStage?.("composing");
   const draft = await callClaude<GeneratedDocuments>({
     action: "compose",
@@ -68,6 +81,7 @@ export async function generateDocuments(
       when: r.when,
       format: r.format,
     })),
+    protocols,
   });
 
   // Pass 3 — audit the draft against the source and revise.
@@ -79,6 +93,7 @@ export async function generateDocuments(
     draft,
     clinicalInstructions: CLINICAL_INSTRUCTIONS,
     styleRules: NOTE_STYLE_RULES,
+    protocols,
   });
 
   return {

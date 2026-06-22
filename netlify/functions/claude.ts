@@ -29,6 +29,36 @@ interface Exemplar {
   context?: string;
   note: string;
 }
+interface Protocol {
+  title: string;
+  source: string;
+  region?: string;
+  whenToRefer: string;
+  requiredWorkup: string;
+  redFlags?: string;
+  referralMustInclude: string;
+  destination: string;
+}
+
+function renderProtocols(protocols: Protocol[]): string {
+  if (!protocols?.length) return "";
+  return (
+    `GROUNDING PROTOCOLS — base referrals and pre-referral workup on these. Apply
+the when-to-refer criteria, put the required workup in the Plan, include
+everything the service needs, and cite the source on the letter:\n\n` +
+    protocols
+      .map(
+        (p) =>
+          `### ${p.title} [${p.source}${p.region ? `, ${p.region}` : ""}]\n` +
+          `When to refer: ${p.whenToRefer}\n` +
+          `Required pre-referral workup: ${p.requiredWorkup}\n` +
+          (p.redFlags ? `Red flags (acute, not routine): ${p.redFlags}\n` : "") +
+          `Referral must include: ${p.referralMustInclude}\n` +
+          `Destination: ${p.destination}`,
+      )
+      .join("\n\n")
+  );
+}
 
 interface ExtractPayload {
   action: "extract";
@@ -44,6 +74,7 @@ interface ComposePayload {
   noteFormat: string;
   exemplars: Exemplar[];
   referralFormats: ReferralFormat[];
+  protocols?: Protocol[];
 }
 interface VerifyPayload {
   action: "verify";
@@ -52,6 +83,7 @@ interface VerifyPayload {
   draft: { note: string; referrals: unknown[] };
   clinicalInstructions: string;
   styleRules: string;
+  protocols?: Protocol[];
 }
 interface ChatPayload {
   action: "chat";
@@ -203,6 +235,8 @@ density, structure, selectivity, and tone — not their specific content:\n\n` +
     )
     .join("\n\n");
 
+  const protocolBlock = renderProtocols(p.protocols ?? []);
+
   const system = `${p.clinicalInstructions}
 
 ${p.styleRules}
@@ -220,9 +254,23 @@ transcript is provided only to resolve wording/phrasing — never use it to add 
 fact that is not in the extracted facts.
 
 Also produce zero or more referral letters. Only generate a referral if the
-facts indicate the clinician intends to refer. Choose the matching type:
+facts indicate the clinician intends to refer. Use this letter structure:
 
 ${referralGuide}
+
+${protocolBlock}
+
+REFERRAL GROUNDING RULES:
+- If a grounding protocol matches the referral, follow its when-to-refer
+  criteria, ensure its required pre-referral workup appears in the note's Plan
+  (flag explicitly if a required item was not done), include everything its
+  "must include" lists, address it to the stated destination, and end the letter
+  with a line citing the source (e.g. "Per [HealthPathways/WeCare] [region]").
+- If red-flag criteria are met, say so — that is an acute/ED pathway, not a
+  routine referral.
+- If NO protocol matches a needed referral, write it conservatively from first
+  principles and add: "(No local protocol matched — please verify against
+  current pathway.)" Never fabricate criteria or thresholds.
 
 Return ONLY JSON (no prose, no fences):
 {"note": "<full SOAP note>", "referrals": [{"title": "<destination/specialty>", "body": "<full letter>"}]}
@@ -258,8 +306,14 @@ CORRECTED final version. Check, and fix where wrong:
 3. NUMBERS — are all vitals/doses exact and correct? Fix any drift.
 4. SELECTION — is social chatter, repetition, or non-pertinent normal findings
    present? Remove it. Is the length proportionate to complexity?
+5. PROTOCOL GROUNDING — for any referral with a grounding protocol below, confirm
+   the required pre-referral workup is in the Plan (add/flag if missing), the
+   letter contains what the service needs, and the source is cited. Do not
+   invent criteria.
 Keep the existing structure and the clinician's style. Make the minimum changes
 needed — do not rewrite good content.
+
+${renderProtocols(p.protocols ?? [])}
 
 Return ONLY JSON (no prose, no fences):
 {"note": "<corrected note>", "referrals": [{"title": "...", "body": "..."}]}`;
