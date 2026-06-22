@@ -79,6 +79,13 @@ ALWAYS DROP (do not let these into the note):
 - Hedging meta-commentary ("the patient reports that...", "it appears that...").
   Write in clipped clinical style.
 
+STRUCTURE:
+- No top-line summary or "Impression" on a consult note — the Assessment IS the
+  impression; duplicating it is wrong even for the most complex, many-question
+  consult. (Referral LETTERS are the exception and keep their opening line.)
+- Number the problems in S and A when there is more than one. A complex consult
+  is handled with a numbered problem list, NOT a longer prose summary.
+
 JUDGEMENT:
 - If a section has nothing to report, write a single line or omit it — don't
   invent content to fill a heading.
@@ -106,27 +113,49 @@ export interface NoteExemplar {
  */
 export const NOTE_EXEMPLARS: NoteExemplar[] = [
   {
-    // ⚠️ PLACEHOLDER — replace with your own real, de-identified notes.
+    // Complex, multi-problem consult — numbered problems, no top summary.
     context:
-      "Adult, 2-day productive cough + fever, no chest pain/SOB; chest clear; afebrile in clinic; treated as viral URTI.",
-    note: `Presenting complaint:
-2/7 productive cough + fever.
+      "52M brings several problems: exertional chest pain, fatigue, HTN review, ankle swelling. ?angina; needs urgent IHD exclusion; oedema likely amlodipine-related.",
+    note: `S:
+1. Chest pain — 2/52 intermittent central chest tightness, exertional (uphill), relieved by rest ~5 min. No radiation, no syncope/palpitations, +mild exertional SOB. No pleuritic/positional features.
+2. Fatigue — 4/52 gradual ↓exercise tolerance. No wt loss/fever/night sweats. No OSA features.
+3. HTN — amlodipine 10 mg OD (adherent). Home BP 140–150/85–90. No headache/visual sx.
+4. Ankle swelling — 3/52 bilateral, worse evenings. No pain/redness/asymmetry.
 
-Subjective (History):
-- Productive cough, green sputum, subjective fevers x2/7. No chest pain, no SOB, no haemoptysis. No recent travel. Non-smoker.
-- PMH: nil significant. Meds: nil regular. NKDA.
+O:
+BP 148/88, HR 76 reg, SpO2 98% RA.
+CVS: HS normal, no murmurs, JVP not raised. Resp: clear. Mild bilateral pitting ankle oedema. No clinical signs of CCF.
 
-Objective (Examination):
-- T 36.8, HR 78, RR 16, SpO2 98% RA, BP 124/76.
-- Chest: clear, no crackles/wheeze. ENT: mild pharyngeal erythema.
+A:
+1. ?Stable angina until proven otherwise — typical exertional pattern, high pre-test probability (age + HTN). Urgent IHD exclusion.
+2. Fatigue / ↓exercise tolerance — likely cardiopulmonary; exclude cardiac first, consider metabolic if workup negative.
+3. HTN — suboptimally controlled on monotherapy.
+4. Bilateral ankle oedema — likely amlodipine-related; cardiac cause not excluded.
 
-Assessment:
-- Viral URTI. No features of pneumonia.
+P:
+- ECG today; bloods FBC, U&E, LFT, TSH, HbA1c, fasting lipids. Troponin if acute change.
+- Urgent cardiology referral — stress test / CTCA per local pathway.
+- Continue amlodipine; if oedema persists, switch to ACEi/ARB after review.
+- Safety-net: ED if rest pain, ↑frequency/severity, or diaphoresis/syncope/SOB at rest. (discussed)
+- Review 1–2/52, sooner if worse.`,
+  },
+  {
+    // ⚠️ PLACEHOLDER simple single-problem example — replace with your own.
+    // Shows: one problem → no numbering, 4 lines, not 20.
+    context:
+      "Adult, 2/7 productive cough + fever, no chest pain/SOB; chest clear; afebrile in clinic; treated as viral URTI.",
+    note: `S:
+2/7 productive cough, green sputum, subjective fevers. No chest pain, no SOB, no haemoptysis. Non-smoker. PMH nil; meds nil; NKDA.
 
-Plan:
-- Symptomatic management: fluids, paracetamol PRN.
-- Safety-net: return if SOB, chest pain, or fever >3 more days. (discussed)
-- No antibiotics indicated.`,
+O:
+T 36.8, HR 78, RR 16, SpO2 98% RA, BP 124/76. Chest clear, no crackles/wheeze. Mild pharyngeal erythema.
+
+A:
+Viral URTI. No features of pneumonia.
+
+P:
+- Symptomatic: fluids, paracetamol PRN. No antibiotics indicated.
+- Safety-net: return if SOB, chest pain, or fever >3/7. (discussed)`,
   },
 ];
 
@@ -134,28 +163,22 @@ export const NOTE_TEMPLATES: NoteTemplate[] = [
   {
     id: "soap",
     name: "Standard consult note (SOAP)",
-    format: `Produce the note with these headings, in this order:
+    format: `Use compact SOAP headings — S, O, A, P — in clipped clinical style with
+standard abbreviations (e.g. 2/52, OD, NAD, SOB).
 
-Presenting complaint:
-<one or two lines>
-
-Subjective (History):
-- HPC (history of presenting complaint)
-- Relevant past medical history, medications, allergies
-- Social / family history if raised
-
-Objective (Examination):
-- Vital signs (only those stated)
-- Examination findings
-
-Assessment:
-- Working diagnosis / differential
-
-Plan:
-- Investigations
-- Treatment / prescriptions
-- Referrals (note here; full letters generated separately)
-- Safety-net advice and follow-up`,
+- Do NOT write a summary or "Impression" line at the top. The Assessment section
+  IS the impression — never duplicate it. (This holds even for complex consults
+  where the patient brings many problems: number the problems, don't add a prose
+  summary on top.)
+- When the patient raises MORE THAN ONE problem, number them (1., 2., …) and use
+  the SAME numbering in S and A so each history maps to its assessment. For a
+  single problem, use no numbering.
+- S: history per problem, then relevant PMH / meds / allergies / risk factors.
+- O: vital signs (only those stated, verbatim), then examination findings.
+- A: one line per problem — working diagnosis/impression with brief reasoning and
+  compact hedging where appropriate (e.g. "cardiac cause not excluded").
+- P: investigations, medication changes, referrals (note here; full letters are
+  generated separately), safety-net advice, and follow-up interval.`,
   },
 ];
 
