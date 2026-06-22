@@ -65,6 +65,9 @@ ALWAYS INCLUDE (never drop these):
 - Every positive examination finding.
 - Pertinent NEGATIVES for the presenting complaint (e.g. for chest pain: "no
   radiation, no SOB, no diaphoresis") — a good note documents what was excluded.
+- For mental-health presentations: document risk explicitly — suicidal ideation
+  and self-harm history — and the exclusion of mania/psychosis features. This is
+  safety-critical and must never be dropped.
 - Every medication started, stopped, or changed (with dose/frequency as stated).
 - Every investigation ordered and every plan item the clinician actually voiced.
 - Safety-net advice recorded SPECIFICALLY — the exact symptoms to return for
@@ -162,6 +165,47 @@ P:
 - Safety-net: worsening pain, dysphagia, or persistent fever. (discussed)
 - Consider throat swab if not improving.`,
   },
+  {
+    // Mental-health consult — risk documented explicitly; MSE-lite in O.
+    context:
+      "34F, low mood + anxiety 6/52, work-related stress; ?adjustment vs moderate depression.",
+    note: `S:
+6/52 low mood, anxiety, ↑work stress. Poor sleep (initiation + early waking). ↓appetite, low energy. No SI, no self-harm hx. No mania/psychosis features.
+
+O:
+Tearful but engages appropriately. No thought disorder.
+
+A:
+Likely adjustment disorder vs moderate depressive episode.
+
+P:
+- Psychology referral / counselling.
+- Discuss antidepressant if no improvement.
+- Sleep hygiene advice.
+- Safety-net: worsening mood or any SI — contact practice or crisis team / ED. (discussed)
+- Review 2–4/52.`,
+  },
+  {
+    // Procedure consult — note the "Procedure —" block after O.
+    context:
+      "45M, 4/7 enlarging painful upper-back lump; fluctuant abscess; I&D under LA in clinic.",
+    note: `S:
+4/7 enlarging painful lump, upper back. No fever or systemic symptoms.
+
+O:
+Fluctuant erythematous abscess, upper back. Minimal surrounding cellulitis. No regional lymphadenopathy.
+
+Procedure — I&D:
+LA infiltrated. Incision + drainage; moderate purulent material expressed. Cavity irrigated + packed. Tolerated well, no complications.
+
+A:
+Uncomplicated cutaneous abscess.
+
+P:
+- Wound care advice; replace packing as directed.
+- Consider antibiotics if cellulitis develops.
+- Safety-net: review if spreading redness, fever, or worsening pain. (discussed)`,
+  },
 ];
 
 export const NOTE_TEMPLATES: NoteTemplate[] = [
@@ -183,7 +227,9 @@ standard abbreviations (e.g. 2/52, OD, NAD, SOB).
 - A: one line per problem — working diagnosis/impression with brief reasoning and
   compact hedging where appropriate (e.g. "cardiac cause not excluded").
 - P: investigations, medication changes, referrals (note here; full letters are
-  generated separately), safety-net advice, and follow-up interval.`,
+  generated separately), safety-net advice, and follow-up interval.
+- For a procedure done in-room, add a "Procedure — <name>:" block after O
+  documenting anaesthetic, technique, findings, and complications.`,
   },
 ];
 
