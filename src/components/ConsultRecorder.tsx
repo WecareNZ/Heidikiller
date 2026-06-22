@@ -14,6 +14,7 @@ export function ConsultRecorder() {
     setError,
     resetConsult,
     setGenerating,
+    setGenStage,
     setDocs,
     generating,
     transcriptText,
@@ -54,12 +55,15 @@ export function ConsultRecorder() {
     setGenerating(true);
     setError(null);
     try {
-      const docs = await generateDocuments(transcript, NOTE_TEMPLATES[0].id);
+      const docs = await generateDocuments(transcript, NOTE_TEMPLATES[0].id, (stage) =>
+        setGenStage(stage),
+      );
       setDocs(docs);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed.");
     } finally {
       setGenerating(false);
+      setGenStage(null);
     }
   };
 

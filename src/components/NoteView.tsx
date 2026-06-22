@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { useStore } from "../state/store";
 
+const STAGE_LABEL: Record<string, string> = {
+  extracting: "Extracting clinical facts…",
+  composing: "Drafting the note…",
+  checking: "Checking against the transcript…",
+};
+
 export function NoteView() {
-  const { docs, generating, updateNote } = useStore();
+  const { docs, generating, genStage, updateNote } = useStore();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -29,7 +35,10 @@ export function NoteView() {
       </div>
 
       {generating ? (
-        <Placeholder text="Drafting your note…" pulse />
+        <Placeholder
+          text={(genStage && STAGE_LABEL[genStage]) ?? "Drafting your note…"}
+          pulse
+        />
       ) : docs ? (
         <textarea
           value={docs.note}

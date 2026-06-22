@@ -4,6 +4,7 @@ import type {
   GeneratedDocuments,
   ChatMessage,
 } from "../lib/types";
+import type { GenStage } from "../lib/api";
 
 interface AppState {
   status: ConsultStatus;
@@ -14,6 +15,7 @@ interface AppState {
   error: string | null;
 
   generating: boolean;
+  genStage: GenStage | null;
   docs: GeneratedDocuments | null;
 
   chat: ChatMessage[];
@@ -27,6 +29,7 @@ interface AppState {
   resetConsult: () => void;
 
   setGenerating: (b: boolean) => void;
+  setGenStage: (s: GenStage | null) => void;
   setDocs: (d: GeneratedDocuments | null) => void;
   updateNote: (note: string) => void;
 
@@ -44,6 +47,7 @@ export const useStore = create<AppState>((set, get) => ({
   interim: "",
   error: null,
   generating: false,
+  genStage: null,
   docs: null,
   chat: [],
   chatBusy: false,
@@ -60,10 +64,12 @@ export const useStore = create<AppState>((set, get) => ({
       interim: "",
       error: null,
       docs: null,
+      genStage: null,
       chat: [],
     }),
 
   setGenerating: (generating) => set({ generating }),
+  setGenStage: (genStage) => set({ genStage }),
   setDocs: (docs) => set({ docs }),
   updateNote: (note) =>
     set((s) => (s.docs ? { docs: { ...s.docs, note } } : {})),

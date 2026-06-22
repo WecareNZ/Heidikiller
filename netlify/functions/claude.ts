@@ -3,24 +3,56 @@ import Anthropic from "@anthropic-ai/sdk";
 /**
  * Server-side proxy for Anthropic. Keeps ANTHROPIC_API_KEY off the client.
  *
- * Two actions (selected by the JSON body `action` field):
- *   - "generate": draft the patient note + referrals from a transcript.
- *                 Returns JSON: { note: string, referrals: {title,body}[] }.
- *   - "chat":     answer a clinician's question. Streams plain text back.
+ * The note pipeline runs as THREE client-orchestrated passes (one model call
+ * each, so none hits the serverless timeout):
+ *   1. "extract" — pull grounded clinical facts from the transcript (Sonnet).
+ *   2. "compose" — write the SOAP note + referrals from those facts (Opus).
+ *   3. "verify"  — audit the draft against the facts and revise (Sonnet).
+ * Plus "chat" — streamed clinical Q&A (Opus).
+ *
+ * Splitting extract/compose/verify is what fixes "over-summarises some, bloats
+ * others": the model can only compose from grounded facts (no invention) and
+ * every fact is explicitly kept or dropped per the rules (no silent omission).
  */
 
-const MODEL = "claude-opus-4-8";
+const MODEL_COMPOSE = "claude-opus-4-8"; // judgement-heavy: selection & phrasing
+const MODEL_UTILITY = "claude-sonnet-4-6"; // mechanical extract / audit: fast
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-interface GeneratePayload {
-  action: "generate";
-  transcript: string;
-  clinicalInstructions: string;
-  noteFormat: string;
-  referralFormats: { name: string; when: string; format: string }[];
+interface ReferralFormat {
+  name: string;
+  when: string;
+  format: string;
+}
+interface Exemplar {
+  context?: string;
+  note: string;
 }
 
+interface ExtractPayload {
+  action: "extract";
+  transcript: string;
+  clinicalInstructions: string;
+}
+interface ComposePayload {
+  action: "compose";
+  transcript: string;
+  facts: unknown;
+  clinicalInstructions: string;
+  styleRules: string;
+  noteFormat: string;
+  exemplars: Exemplar[];
+  referralFormats: ReferralFormat[];
+}
+interface VerifyPayload {
+  action: "verify";
+  transcript: string;
+  facts: unknown;
+  draft: { note: string; referrals: unknown[] };
+  clinicalInstructions: string;
+  styleRules: string;
+}
 interface ChatPayload {
   action: "chat";
   question: string;
@@ -28,7 +60,11 @@ interface ChatPayload {
   history?: { role: "user" | "assistant"; content: string }[];
 }
 
-type Payload = GeneratePayload | ChatPayload;
+type Payload =
+  | ExtractPayload
+  | ComposePayload
+  | VerifyPayload
+  | ChatPayload;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -50,19 +86,115 @@ export default async (req: Request): Promise<Response> => {
   }
 
   try {
-    if (payload.action === "generate") return await handleGenerate(payload);
-    if (payload.action === "chat") return handleChat(payload);
-    return json({ error: "Unknown action." }, 400);
+    switch (payload.action) {
+      case "extract":
+        return await handleExtract(payload);
+      case "compose":
+        return await handleCompose(payload);
+      case "verify":
+        return await handleVerify(payload);
+      case "chat":
+        return handleChat(payload);
+      default:
+        return json({ error: "Unknown action." }, 400);
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unexpected error.";
     return json({ error: message }, 502);
   }
 };
 
-async function handleGenerate(p: GeneratePayload): Promise<Response> {
+/** Single non-streaming call returning the model's text. */
+async function complete(
+  model: string,
+  maxTokens: number,
+  system: string,
+  user: string,
+): Promise<string> {
+  const res = await client.messages.create({
+    model,
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: "user", content: user }],
+  });
+  const block = res.content.find((b) => b.type === "text");
+  if (!block || block.type !== "text") throw new Error("Model returned no text.");
+  return block.text;
+}
+
+/** Pull a JSON value out of a model response, tolerating fences/prose. */
+function extractJson<T>(raw: string): T | null {
+  const cleaned = raw.replace(/```json\s*|\s*```/g, "");
+  const start = cleaned.search(/[{[]/);
+  const endObj = cleaned.lastIndexOf("}");
+  const endArr = cleaned.lastIndexOf("]");
+  const end = Math.max(endObj, endArr);
+  if (start === -1 || end <= start) return null;
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1)) as T;
+  } catch {
+    return null;
+  }
+}
+
+// ── Pass 1: extract ─────────────────────────────────────────────────────────
+async function handleExtract(p: ExtractPayload): Promise<Response> {
   if (!p.transcript?.trim()) {
     return json({ error: "Transcript is empty — nothing to summarise." }, 400);
   }
+
+  const system = `${p.clinicalInstructions}
+
+You are extracting clinical facts from a raw, possibly messy consultation
+transcript (speech-to-text — may contain errors, crosstalk, and small talk).
+
+Extract EVERY clinically relevant fact, faithfully and verbatim where it matters
+(numbers, doses, vitals). Do NOT summarise, interpret, or infer — just capture
+what was actually said. Ignore pure social conversation. If a value is unclear
+or garbled, put it under "unclear".
+
+Return ONLY a JSON object of this shape (no prose, no fences):
+{
+  "presenting_complaint": "string",
+  "history": ["..."],
+  "past_history_meds_allergies": ["..."],
+  "social_family": ["..."],
+  "vitals": ["verbatim, e.g. 'HR 78', 'BP 124/76'"],
+  "exam_findings": ["..."],
+  "pertinent_negatives": ["explicitly stated negatives, e.g. 'no chest pain'"],
+  "investigations_ordered": ["..."],
+  "assessment_or_impression": ["..."],
+  "plan_items_voiced": ["only plans/advice the clinician actually stated"],
+  "medication_changes": ["start/stop/change with dose as stated"],
+  "unclear": ["anything garbled or ambiguous"]
+}
+Use [] for empty categories. Newlines inside strings escaped as \\n.`;
+
+  const text = await complete(
+    MODEL_UTILITY,
+    4000,
+    system,
+    `Consultation transcript:\n\n${p.transcript}`,
+  );
+  const facts = extractJson<Record<string, unknown>>(text);
+  if (!facts) return json({ error: "Could not parse extracted facts." }, 502);
+  return json({ facts });
+}
+
+// ── Pass 2: compose ─────────────────────────────────────────────────────────
+async function handleCompose(p: ComposePayload): Promise<Response> {
+  const exemplarBlock = p.exemplars.length
+    ? `Here are examples of THIS clinician's preferred note style. Match their
+density, structure, selectivity, and tone — not their specific content:\n\n` +
+      p.exemplars
+        .map(
+          (e, i) =>
+            `--- Example ${i + 1} ---${
+              e.context ? `\nSituation: ${e.context}` : ""
+            }\nNote:\n${e.note}`,
+        )
+        .join("\n\n")
+    : "";
 
   const referralGuide = p.referralFormats
     .map(
@@ -73,65 +205,85 @@ async function handleGenerate(p: GeneratePayload): Promise<Response> {
 
   const system = `${p.clinicalInstructions}
 
-You will be given a raw, possibly messy transcript of a clinical consultation
-(speech-to-text, may contain errors and crosstalk). Produce two things:
+${p.styleRules}
 
-1. A patient note that EXACTLY follows this format:
+The patient note MUST follow this exact structure:
 ---
 ${p.noteFormat}
 ---
 
-2. Zero or more referral letters. Only generate a referral if the transcript
-indicates the clinician intends to refer the patient. Choose the matching
-referral type from these definitions:
+${exemplarBlock}
+
+You will be given a structured list of clinical facts extracted from the
+consultation. Write the note from THOSE FACTS as your source of truth. The raw
+transcript is provided only to resolve wording/phrasing — never use it to add a
+fact that is not in the extracted facts.
+
+Also produce zero or more referral letters. Only generate a referral if the
+facts indicate the clinician intends to refer. Choose the matching type:
 
 ${referralGuide}
 
-Return your answer as JSON matching the provided schema. The "note" is the full
-note text. Each entry in "referrals" has a short "title" (e.g. the destination
-specialty) and the full letter "body". If no referral is warranted, return an
-empty "referrals" array.`;
+Return ONLY JSON (no prose, no fences):
+{"note": "<full SOAP note>", "referrals": [{"title": "<destination/specialty>", "body": "<full letter>"}]}
+Use "referrals": [] if none. Newlines inside strings escaped as \\n.`;
 
-  const jsonSpec = `Return ONLY a JSON object (no markdown fences, no prose) of this exact shape:
-{"note": "<the full note text>", "referrals": [{"title": "<short destination/specialty>", "body": "<the full referral letter>"}]}
-If no referral is warranted, use "referrals": []. Newlines inside strings must be escaped as \\n.`;
+  const user = `EXTRACTED FACTS (source of truth):
+${JSON.stringify(p.facts, null, 2)}
 
-  const response = await client.messages.create({
-    model: MODEL,
-    max_tokens: 8000,
-    system: `${system}\n\n${jsonSpec}`,
-    messages: [{ role: "user", content: `Consultation transcript:\n\n${p.transcript}` }],
+RAW TRANSCRIPT (wording reference only — do not add new facts):
+${p.transcript}`;
+
+  const text = await complete(MODEL_COMPOSE, 8000, system, user);
+  const parsed = extractJson<{ note?: string; referrals?: unknown[] }>(text);
+  if (!parsed) return json({ error: "Could not parse the drafted note." }, 502);
+  return json({
+    note: typeof parsed.note === "string" ? parsed.note : "",
+    referrals: Array.isArray(parsed.referrals) ? parsed.referrals : [],
   });
-
-  const text = response.content.find((b) => b.type === "text");
-  if (!text || text.type !== "text") {
-    return json({ error: "Model returned no usable output." }, 502);
-  }
-
-  const parsed = extractJson(text.text);
-  if (!parsed) {
-    return json({ error: "Could not parse the model's output." }, 502);
-  }
-  return json(parsed);
 }
 
-/** Pulls a JSON object out of a model response, tolerating stray fences/prose. */
-function extractJson(raw: string): { note: string; referrals: unknown[] } | null {
-  const fenced = raw.replace(/```json\s*|\s*```/g, "");
-  const start = fenced.indexOf("{");
-  const end = fenced.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) return null;
-  try {
-    const obj = JSON.parse(fenced.slice(start, end + 1));
-    return {
-      note: typeof obj.note === "string" ? obj.note : "",
-      referrals: Array.isArray(obj.referrals) ? obj.referrals : [],
-    };
-  } catch {
-    return null;
-  }
+// ── Pass 3: verify & revise ──────────────────────────────────────────────────
+async function handleVerify(p: VerifyPayload): Promise<Response> {
+  const system = `${p.clinicalInstructions}
+
+${p.styleRules}
+
+You are auditing a drafted clinical note against the source material. Produce a
+CORRECTED final version. Check, and fix where wrong:
+1. OMISSIONS — is every voiced plan item, medication change, abnormal/stated
+   vital, and positive finding present? Add any that are missing.
+2. INVENTIONS — is anything in the draft (especially plan/advice/safety-netting)
+   that was NOT in the facts or transcript? Remove it.
+3. NUMBERS — are all vitals/doses exact and correct? Fix any drift.
+4. SELECTION — is social chatter, repetition, or non-pertinent normal findings
+   present? Remove it. Is the length proportionate to complexity?
+Keep the existing structure and the clinician's style. Make the minimum changes
+needed — do not rewrite good content.
+
+Return ONLY JSON (no prose, no fences):
+{"note": "<corrected note>", "referrals": [{"title": "...", "body": "..."}]}`;
+
+  const user = `EXTRACTED FACTS:
+${JSON.stringify(p.facts, null, 2)}
+
+RAW TRANSCRIPT:
+${p.transcript}
+
+DRAFT TO AUDIT:
+${JSON.stringify(p.draft, null, 2)}`;
+
+  const text = await complete(MODEL_UTILITY, 8000, system, user);
+  const parsed = extractJson<{ note?: string; referrals?: unknown[] }>(text);
+  // If the audit output is unparseable, fall back to the unmodified draft.
+  if (!parsed) return json(p.draft);
+  return json({
+    note: typeof parsed.note === "string" ? parsed.note : p.draft.note,
+    referrals: Array.isArray(parsed.referrals) ? parsed.referrals : p.draft.referrals,
+  });
 }
 
+// ── Clinical chatbot ─────────────────────────────────────────────────────────
 function handleChat(p: ChatPayload): Response {
   if (!p.question?.trim()) {
     return json({ error: "Question is empty." }, 400);
@@ -161,7 +313,7 @@ questions accurately and concisely.
       const encoder = new TextEncoder();
       try {
         const s = client.messages.stream({
-          model: MODEL,
+          model: MODEL_COMPOSE,
           max_tokens: 2000,
           system,
           messages: [

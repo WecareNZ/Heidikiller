@@ -1,9 +1,24 @@
 import type { GeneratedDocuments, ChatMessage } from "./types";
 import {
   CLINICAL_INSTRUCTIONS,
+  NOTE_STYLE_RULES,
+  NOTE_EXEMPLARS,
   NOTE_TEMPLATES,
   REFERRAL_TEMPLATES,
 } from "../config/templates";
+
+export type GenStage = "extracting" | "composing" | "checking";
+
+async function callClaude<T>(body: Record<string, unknown>): Promise<T> {
+  const res = await fetch("/.netlify/functions/claude", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Request failed.");
+  return data as T;
+}
 
 /**
  * Thin client for the Netlify Functions. All Claude calls go through the
@@ -19,33 +34,56 @@ export async function fetchDeepgramToken(): Promise<string> {
   return data.token as string;
 }
 
+/**
+ * Three-pass pipeline (extract → compose → verify), orchestrated client-side so
+ * each model call is its own short serverless request. `onStage` drives the UI.
+ */
 export async function generateDocuments(
   transcript: string,
   noteTemplateId: string,
+  onStage?: (stage: GenStage) => void,
 ): Promise<GeneratedDocuments> {
   const note = NOTE_TEMPLATES.find((t) => t.id === noteTemplateId) ?? NOTE_TEMPLATES[0];
 
-  const res = await fetch("/.netlify/functions/claude", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      action: "generate",
-      transcript,
-      clinicalInstructions: CLINICAL_INSTRUCTIONS,
-      noteFormat: note.format,
-      referralFormats: REFERRAL_TEMPLATES.map((r) => ({
-        name: r.name,
-        when: r.when,
-        format: r.format,
-      })),
-    }),
+  // Pass 1 — extract grounded clinical facts.
+  onStage?.("extracting");
+  const { facts } = await callClaude<{ facts: unknown }>({
+    action: "extract",
+    transcript,
+    clinicalInstructions: CLINICAL_INSTRUCTIONS,
   });
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? "Failed to generate documents.");
+  // Pass 2 — compose the note + referrals from the facts.
+  onStage?.("composing");
+  const draft = await callClaude<GeneratedDocuments>({
+    action: "compose",
+    transcript,
+    facts,
+    clinicalInstructions: CLINICAL_INSTRUCTIONS,
+    styleRules: NOTE_STYLE_RULES,
+    noteFormat: note.format,
+    exemplars: NOTE_EXEMPLARS,
+    referralFormats: REFERRAL_TEMPLATES.map((r) => ({
+      name: r.name,
+      when: r.when,
+      format: r.format,
+    })),
+  });
+
+  // Pass 3 — audit the draft against the source and revise.
+  onStage?.("checking");
+  const final = await callClaude<GeneratedDocuments>({
+    action: "verify",
+    transcript,
+    facts,
+    draft,
+    clinicalInstructions: CLINICAL_INSTRUCTIONS,
+    styleRules: NOTE_STYLE_RULES,
+  });
+
   return {
-    note: data.note ?? "",
-    referrals: Array.isArray(data.referrals) ? data.referrals : [],
+    note: final.note ?? "",
+    referrals: Array.isArray(final.referrals) ? final.referrals : [],
   };
 }
 
