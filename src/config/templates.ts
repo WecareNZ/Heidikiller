@@ -67,6 +67,9 @@ ALWAYS INCLUDE (never drop these):
   radiation, no SOB, no diaphoresis") — a good note documents what was excluded.
 - Every medication started, stopped, or changed (with dose/frequency as stated).
 - Every investigation ordered and every plan item the clinician actually voiced.
+- Safety-net advice recorded SPECIFICALLY — the exact symptoms to return for
+  (e.g. "dysphagia, persistent fever") — never a bare "safety-net given". This
+  is the medico-legal record.
 - Relevant past history, allergies, and risk factors germane to THIS problem.
 
 ALWAYS DROP (do not let these into the note):
@@ -140,22 +143,24 @@ P:
 - Review 1–2/52, sooner if worse.`,
   },
   {
-    // ⚠️ PLACEHOLDER simple single-problem example — replace with your own.
-    // Shows: one problem → no numbering, 4 lines, not 20.
+    // Real simple single-problem consult — one problem → no numbering, ~6 lines.
+    // The "28F –" identifier line is intentionally NOT here: it comes from the
+    // patient record (prepended deterministically), never invented from audio.
     context:
-      "Adult, 2/7 productive cough + fever, no chest pain/SOB; chest clear; afebrile in clinic; treated as viral URTI.",
+      "28F, sore throat 3/7; viral pharyngitis; symptomatic management + safety-net.",
     note: `S:
-2/7 productive cough, green sputum, subjective fevers. No chest pain, no SOB, no haemoptysis. Non-smoker. PMH nil; meds nil; NKDA.
+3/7 sore throat, worse on swallowing. Mild fever, fatigue. No cough, SOB, or rash. Tolerating fluids, reduced appetite. No recurrent tonsillitis.
 
 O:
-T 36.8, HR 78, RR 16, SpO2 98% RA, BP 124/76. Chest clear, no crackles/wheeze. Mild pharyngeal erythema.
+Mild pharyngeal erythema, no exudate. Mild cervical lymphadenopathy. Obs stable.
 
 A:
-Viral URTI. No features of pneumonia.
+Likely viral pharyngitis.
 
 P:
-- Symptomatic: fluids, paracetamol PRN. No antibiotics indicated.
-- Safety-net: return if SOB, chest pain, or fever >3/7. (discussed)`,
+- Simple analgesia (paracetamol/ibuprofen), fluids, rest.
+- Safety-net: worsening pain, dysphagia, or persistent fever. (discussed)
+- Consider throat swab if not improving.`,
   },
 ];
 
